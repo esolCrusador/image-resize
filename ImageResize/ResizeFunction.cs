@@ -16,27 +16,24 @@ namespace ImageResize
     {
         [FunctionName("resize")]
         public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "{*query}")] HttpRequest req,
+            string query,
             ILogger log)
         {
+            if (query == "ping")
+                return new ContentResult { Content = "OK" };
+
+            if (query != "resize")
+                return new BadRequestObjectResult(new { Query = new { Route = "Not Supported" } });
+
             StringValues sizeParam = req.Query["size"];
             StringValues qualityParam = req.Query["quality"];
+
             if (sizeParam.Count == 0)
-                return new BadRequestObjectResult(new
-                {
-                    Query = new
-                    {
-                        Size = "Required"
-                    }
-                });
+                return new BadRequestObjectResult(new { Query = new { Size = "Required" } });
+
             if (qualityParam.Count == 0)
-                return new BadRequestObjectResult(new
-                {
-                    Query = new
-                    {
-                        Quality = "Required: 0 - 100"
-                    }
-                });
+                return new BadRequestObjectResult(new { Query = new { Quality = "Required: 0 - 100" } });
 
             int size = int.Parse(sizeParam.First());
             int quality = int.Parse(qualityParam.First());
@@ -48,24 +45,12 @@ namespace ImageResize
             }
             catch (ArgumentOutOfRangeException)
             {
-                return new BadRequestObjectResult(new
-                {
-                    Headers = new
-                    {
-                        ContentType = $"Content type \"{req.ContentType}\" is not supported."
-                    }
-                });
+                return new BadRequestObjectResult(new { Headers = new { ContentType = $"Content type \"{req.ContentType}\" is not supported." } });
             }
 
             Stream result = await ResizeImage(req.Body, format, size, quality);
             if (result == null)
-                return new BadRequestObjectResult(new
-                {
-                    Body = new
-                    {
-                        Image = "Something wrong with incoming image"
-                    }
-                });
+                return new BadRequestObjectResult(new { Body = new { Image = "Something wrong with incoming image" } });
 
             return new FileStreamResult(result, req.ContentType);
         }
