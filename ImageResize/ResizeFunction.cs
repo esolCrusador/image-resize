@@ -93,9 +93,6 @@ namespace ImageResize
             if (widthParam == null && heightParam == null) // TODO: Remove after migration. backward compatibility
                 widthParam = heightParam = queryString.Get("size");
 
-            if (widthParam == null && heightParam == null)
-                throw new ArgumentException { Data = { { "ValidationData", new { Query = new { Width = "Required", Height = "Required" } } } } };
-
             if (qualityParam == null)
                 throw new ArgumentException { Data = { { "ValidationData", new { Query = new { Quality = "Required: 0 - 100" } } } } };
 
@@ -105,9 +102,7 @@ namespace ImageResize
 
             double minimumDifference;
             if (minimumDifferenceParam == null || !double.TryParse(minimumDifferenceParam, out minimumDifference))
-                minimumDifference = 20; /* Below this percentage of difference no sense to make new image. */
-
-            minimumDifference /= 100;
+                minimumDifference = 0.20; /* Below this percentage of difference no sense to make new image. */
 
             string contentType = request.Content.Headers.ContentType.MediaType;
 
@@ -134,22 +129,29 @@ namespace ImageResize
 
                 int width;
                 int height;
-
-                int widthDifference = original.Width - (inputImage.TargetWidth ?? 0);
-                int heightDifference = original.Height - (inputImage.TargetHeight ?? 0);
-                double difference = Math.Min((double)widthDifference / original.Width, (double)heightDifference / original.Height);
-                if (difference < inputImage.MinimumDifference)
-                    return new OutputImageParameters(original.Width, original.Height, originalSize);
-
-                if (widthDifference < heightDifference)
+                if (inputImage.TargetWidth.HasValue || inputImage.TargetHeight.HasValue)
                 {
-                    width = inputImage.TargetWidth.Value;
-                    height = original.Height * width / original.Width;
+                    int widthDifference = original.Width - (inputImage.TargetWidth ?? 0);
+                    int heightDifference = original.Height - (inputImage.TargetHeight ?? 0);
+                    double difference = Math.Min((double)widthDifference / original.Width, (double)heightDifference / original.Height);
+                    if (difference < inputImage.MinimumDifference)
+                        return new OutputImageParameters(original.Width, original.Height, originalSize);
+
+                    if (widthDifference < heightDifference)
+                    {
+                        width = inputImage.TargetWidth.Value;
+                        height = original.Height * width / original.Width;
+                    }
+                    else
+                    {
+                        height = inputImage.TargetHeight.Value;
+                        width = original.Width * height / original.Height;
+                    }
                 }
                 else
                 {
-                    height = inputImage.TargetHeight.Value;
-                    width = original.Width * height / original.Height;
+                    width = original.Width;
+                    height = original.Height;
                 }
 
                 using (SKBitmap resized = original.Resize(new SKImageInfo(width, height), SKFilterQuality.High))
