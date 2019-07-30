@@ -21,7 +21,7 @@ namespace ImageResize
             ILogger log)
         {
             if (query == "ping")
-                return request.CreateResponse(HttpStatusCode.BadRequest, new { Content = "OK" });
+                return request.CreateResponse(HttpStatusCode.OK, "OK");
 
             if (query != "resize")
                 return request.CreateResponse(HttpStatusCode.BadRequest, new { Query = new { Route = "Not Supported" } });
