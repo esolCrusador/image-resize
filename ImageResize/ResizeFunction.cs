@@ -175,6 +175,8 @@ namespace ImageResize
         {
             if (contentType == "image/jpeg")
                 return SKEncodedImageFormat.Jpeg;
+            if (contentType == "image/png")
+                return SKEncodedImageFormat.Png;
 
             throw new ArgumentOutOfRangeException(nameof(contentType));
         }
