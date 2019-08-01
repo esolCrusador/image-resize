@@ -7,7 +7,7 @@ namespace ImageResize
     {
         public InputImageParameters(string contentType, SKEncodedImageFormat format, int? targetWith, int? targetHeight, int quality, double minimumDifference)
         {
-            ContentType = contentType;
+            OutputContentType = contentType;
             Format = format;
             TargetWidth = targetWith;
             TargetHeight = targetHeight;
@@ -17,7 +17,7 @@ namespace ImageResize
             InputStream = null;
         }
 
-        public string ContentType { get; set; }
+        public string OutputContentType { get; set; }
         public SKEncodedImageFormat Format { get; private set; }
         public int? TargetWidth { get; private set; }
         public int? TargetHeight { get; private set; }

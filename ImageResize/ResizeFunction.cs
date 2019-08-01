@@ -3,8 +3,10 @@ using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -69,7 +71,7 @@ namespace ImageResize
 
                 response.Content = new StreamContent(result.OutputStream)
                 {
-                    Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.ContentType) }
+                    Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.OutputContentType) }
                 };
                 response.StatusCode = HttpStatusCode.OK;
             }
@@ -104,19 +106,23 @@ namespace ImageResize
             if (minimumDifferenceParam == null || !double.TryParse(minimumDifferenceParam, out minimumDifference))
                 minimumDifference = 0.20; /* Below this percentage of difference no sense to make new image. */
 
-            string contentType = request.Content.Headers.ContentType.MediaType;
+            string outputContentType;
+            if(request.Headers.TryGetValues("Accept", out IEnumerable<string> acceptHeaders))
+                outputContentType = acceptHeaders.First();
+            else
+                throw new ArgumentException { Data = { { "ValidationData", new { Headers = new { Accept = $"Required" } } } } };
 
             SKEncodedImageFormat format;
             try
             {
-                format = GetImageFormat(contentType);
+                format = GetImageFormat(outputContentType);
             }
             catch (ArgumentOutOfRangeException)
             {
-                throw new ArgumentException { Data = { { "ValidationData", new { Headers = new { ContentType = $"Content type \"{contentType}\" is not supported." } } } } };
+                throw new ArgumentException { Data = { { "ValidationData", new { Headers = new { ContentType = $"Content type \"{outputContentType}\" is not supported" } } } } };
             }
 
-            return new InputImageParameters(contentType, format, width, height, quality, minimumDifference);
+            return new InputImageParameters(outputContentType, format, width, height, quality, minimumDifference);
         }
 
         private static OutputImageParameters ResizeImage(InputImageParameters inputImage)
