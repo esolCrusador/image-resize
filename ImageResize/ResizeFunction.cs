@@ -137,8 +137,8 @@ namespace ImageResize
                 int height;
                 if (inputImage.TargetWidth.HasValue || inputImage.TargetHeight.HasValue)
                 {
-                    int widthDifference = original.Width - (inputImage.TargetWidth ?? 0);
-                    int heightDifference = original.Height - (inputImage.TargetHeight ?? 0);
+                    int widthDifference = original.Width - (inputImage.TargetWidth ?? (int.MinValue / 2));
+                    int heightDifference = original.Height - (inputImage.TargetHeight ?? (int.MinValue / 2));
                     double difference = Math.Min((double)widthDifference / original.Width, (double)heightDifference / original.Height);
                     if (difference < inputImage.MinimumDifference)
                         return new OutputImageParameters(original.Width, original.Height, originalSize);
