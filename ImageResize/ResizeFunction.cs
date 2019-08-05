@@ -1,6 +1,9 @@
+using ImageResize.Contract;
+using ImageResize.Logic;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -16,6 +19,9 @@ namespace ImageResize
 {
     public static class ResizeFunction
     {
+        private static readonly ImageResizeService _imageResizeService = new ImageResizeService();
+        private static readonly ImageUploadService _imageUploadService = new ImageUploadService(new TemplateParametersService());
+
         [FunctionName("resize")]
         public static async Task<HttpResponseMessage> Run(
             [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = "{*query}")] HttpRequestMessage request,
@@ -29,9 +35,11 @@ namespace ImageResize
                 return request.CreateResponse(HttpStatusCode.BadRequest, new { Query = new { Route = "Not Supported" } });
 
             InputImageParameters inputParameters;
+            IReadOnlyCollection<ImageSizeParam> imageSizes;
             try
             {
                 inputParameters = ParseImageInputParameters(request);
+                imageSizes = ParseImageSizeParameters(request);
             }
             catch (ArgumentException ex)
             {
@@ -42,75 +50,156 @@ namespace ImageResize
                 throw;
             }
 
-            OutputImageParameters result;
-            using (MemoryStream imageStreamCopy = new MemoryStream())
+            if (inputParameters.UploadUrl == null)
             {
-                Stream imageStream = await request.Content.ReadAsStreamAsync();
-                await imageStream.CopyToAsync(imageStreamCopy);
-                if (imageStreamCopy.Length == 0)
-                    return request.CreateResponse(HttpStatusCode.BadRequest, new { Body = new { Image = "Required" } });
-
-                imageStreamCopy.Position = 0;
-                inputParameters.InputStream = imageStreamCopy;
-
-                result = ResizeImage(inputParameters);
-            }
-            if (result == null)
-                return request.CreateResponse(HttpStatusCode.BadRequest, new { Body = new { Image = "Something wrong with incoming image" } });
-
-            HttpResponseMessage response = request.CreateResponse();
-            response.Headers.Add("X-Original-Width", result.OriginalWidth.ToString());
-            response.Headers.Add("X-Original-Height", result.OriginalHeight.ToString());
-            response.Headers.Add("X-Original-Size", result.OriginalSize.ToString());
-
-            if (result.Resized)
-            {
-                response.Headers.Add("X-Result-Width", result.ResultWidth.ToString());
-                response.Headers.Add("X-Result-Height", result.ResultHeight.ToString());
-                response.Headers.Add("X-Result-Size", result.ResultSize.ToString());
-
-                response.Content = new StreamContent(result.OutputStream)
-                {
-                    Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.OutputContentType) }
-                };
-                response.StatusCode = HttpStatusCode.OK;
+                return await ResizeSingle(request, inputParameters, imageSizes);
             }
             else
             {
-                response.StatusCode = HttpStatusCode.NoContent;
+                return await ResizeMultiple(request, inputParameters, imageSizes);
             }
+        }
+
+        private static async Task<HttpResponseMessage> ResizeSingle(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
+        {
+            using (await _imageResizeService.CaptureAsync())
+            {
+
+                OutputImageParameters result;
+                try
+                {
+                    using (MemoryStream imageStreamCopy = new MemoryStream())
+                    {
+                        Stream imageStream = await request.Content.ReadAsStreamAsync();
+                        await imageStream.CopyToAsync(imageStreamCopy);
+                        if (imageStreamCopy.Length == 0)
+                            return request.CreateResponse(HttpStatusCode.BadRequest, new { Body = new { Image = "Required" } });
+
+                        imageStreamCopy.Position = 0;
+                        inputParameters.InputStream = imageStreamCopy;
+
+                        result = _imageResizeService.Resize(inputParameters, imageSizes.Single());
+                    }
+                    if (result == null)
+                        return request.CreateResponse(HttpStatusCode.BadRequest, new { Body = new { Image = "Something wrong with incoming image" } });
+                }
+                catch (ArgumentException ex)
+                {
+                    object validationData = ex.Data["ValidationData"];
+                    if (validationData != null)
+                        return request.CreateResponse(HttpStatusCode.BadRequest, validationData);
+
+                    throw;
+                }
 
 
-            return response;
+                HttpResponseMessage response = request.CreateResponse();
+
+                if (result.Resized)
+                {
+                    response.Headers.Add("X-Width", result.Width.ToString());
+                    response.Headers.Add("X-Height", result.Height.ToString());
+                    response.Headers.Add("X-Size", result.Size.ToString());
+
+                    response.Content = new StreamContent(result.OutputStream)
+                    {
+                        Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.OutputContentType) }
+                    };
+                    response.StatusCode = HttpStatusCode.OK;
+                }
+                else
+                {
+                    response.StatusCode = HttpStatusCode.NoContent;
+                }
+
+                return response;
+            }
+        }
+
+        private static async Task<HttpResponseMessage> ResizeMultiple(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
+        {
+            using (await _imageResizeService.CaptureAsync())
+            {
+
+                List<ImageResizeResultModel> resizeResults = new List<ImageResizeResultModel>();
+                List<Task> uploadTasks = new List<Task>();
+
+                try
+                {
+                    using (MemoryStream imageStreamCopy = new MemoryStream())
+                    {
+                        Stream imageStream = await request.Content.ReadAsStreamAsync();
+                        await imageStream.CopyToAsync(imageStreamCopy);
+                        if (imageStreamCopy.Length == 0)
+                            return request.CreateResponse(HttpStatusCode.BadRequest, new { Body = new { Image = "Required" } });
+
+                        imageStreamCopy.Position = 0;
+                        inputParameters.InputStream = imageStreamCopy;
+
+                        foreach (OutputImageParameters image in _imageResizeService.ResizeMultiple(inputParameters, imageSizes))
+                        {
+                            resizeResults.Add(new ImageResizeResultModel(image.Width, image.Height, image.Size, image.Quality));
+                            uploadTasks.Add(_imageUploadService.UploadImage(inputParameters.UploadUrl, image));
+                        }
+                    }
+                }
+                catch (ArgumentException ex)
+                {
+                    object validationData = ex.Data["ValidationData"];
+                    if (validationData != null)
+                        return request.CreateResponse(HttpStatusCode.BadRequest, validationData);
+
+                    throw;
+                }
+
+                try
+                {
+                    await Task.WhenAll(uploadTasks);
+                }
+                catch (HttpRequestException ex)
+                {
+                    request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex);
+                }
+
+                HttpResponseMessage response = request.CreateResponse(HttpStatusCode.OK, JsonConvert.SerializeObject(resizeResults));
+
+                return response;
+            }
+        }
+
+        private static IReadOnlyCollection<ImageSizeParam> ParseImageSizeParameters(HttpRequestMessage request)
+        {
+            NameValueCollection queryString = request.RequestUri.ParseQueryString();
+
+            string[] sizeParams = queryString.GetValues("size");
+            if (sizeParams == null || sizeParams.Length == 0)
+                throw new ArgumentException { Data = { { "ValidationData", new { Query = new { Size = "Required" } } } } };
+
+            return sizeParams.Select(sizeParam =>
+            {
+                if (!ImageSizeParam.TryParse(sizeParam, out ImageSizeParam size))
+                    throw new ArgumentException { Data = { { "ValidationData", new { Query = new { Size = "Incorrect size format. It should be \"${width}x${height}q${quality}\"" } } } } };
+
+                return size;
+            }).ToList();
         }
 
         private static InputImageParameters ParseImageInputParameters(HttpRequestMessage request)
         {
             NameValueCollection queryString = request.RequestUri.ParseQueryString();
-            string widthParam = queryString.Get("width");
-            string heightParam = queryString.Get("height");
-            string qualityParam = queryString.Get("quality");
             string minimumDifferenceParam = queryString.Get("diff");
-
-            if (widthParam == null && heightParam == null) // TODO: Remove after migration. backward compatibility
-                widthParam = heightParam = queryString.Get("size");
-
-            if (qualityParam == null)
-                throw new ArgumentException { Data = { { "ValidationData", new { Query = new { Quality = "Required: 0 - 100" } } } } };
-
-            int? width = widthParam == null ? (int?)null : int.Parse(widthParam);
-            int? height = heightParam == null ? (int?)null : int.Parse(heightParam);
-            int quality = int.Parse(qualityParam);
 
             double minimumDifference;
             if (minimumDifferenceParam == null || !double.TryParse(minimumDifferenceParam, out minimumDifference))
                 minimumDifference = 0.20; /* Below this percentage of difference no sense to make new image. */
 
             string outputContentType;
-            if(request.Headers.TryGetValues("Accept", out IEnumerable<string> acceptHeaders))
+            if (request.Headers.TryGetValues("Accept", out IEnumerable<string> acceptHeaders))
                 outputContentType = acceptHeaders.First();
             else
                 throw new ArgumentException { Data = { { "ValidationData", new { Headers = new { Accept = $"Required" } } } } };
+
+            string uploadUrl = queryString.Get("upload-url");
 
             SKEncodedImageFormat format;
             try
@@ -122,59 +211,7 @@ namespace ImageResize
                 throw new ArgumentException { Data = { { "ValidationData", new { Headers = new { ContentType = $"Content type \"{outputContentType}\" is not supported" } } } } };
             }
 
-            return new InputImageParameters(outputContentType, format, width, height, quality, minimumDifference);
-        }
-
-        private static OutputImageParameters ResizeImage(InputImageParameters inputImage)
-        {
-            int originalSize = (int)inputImage.InputStream.Length;
-            using (SKBitmap original = SKBitmap.Decode(inputImage.InputStream))
-            {
-                if (original == null)
-                    return null;
-
-                int width;
-                int height;
-                if (inputImage.TargetWidth.HasValue || inputImage.TargetHeight.HasValue)
-                {
-                    int widthDifference = original.Width - (inputImage.TargetWidth ?? (int.MinValue / 2));
-                    int heightDifference = original.Height - (inputImage.TargetHeight ?? (int.MinValue / 2));
-                    double difference = Math.Min((double)widthDifference / original.Width, (double)heightDifference / original.Height);
-                    if (difference < inputImage.MinimumDifference)
-                        return new OutputImageParameters(original.Width, original.Height, originalSize);
-
-                    if (widthDifference < heightDifference)
-                    {
-                        width = inputImage.TargetWidth.Value;
-                        height = original.Height * width / original.Width;
-                    }
-                    else
-                    {
-                        height = inputImage.TargetHeight.Value;
-                        width = original.Width * height / original.Height;
-                    }
-                }
-                else
-                {
-                    width = original.Width;
-                    height = original.Height;
-                }
-
-                using (SKBitmap resized = original.Resize(new SKImageInfo(width, height), SKFilterQuality.High))
-                {
-                    if (resized == null)
-                        return null;
-
-                    using (SKImage image = SKImage.FromBitmap(resized))
-                    {
-                        MemoryStream output = new MemoryStream();
-                        image.Encode(inputImage.Format, inputImage.Quality).SaveTo(output);
-                        output.Position = 0;
-
-                        return new OutputImageParameters(original.Width, original.Height, originalSize, output, image.Width, image.Height, (int)output.Length);
-                    }
-                }
-            }
+            return new InputImageParameters(outputContentType, format, minimumDifference, uploadUrl);
         }
 
         private static SKEncodedImageFormat GetImageFormat(string contentType)

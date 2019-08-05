@@ -5,7 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="1.0.29" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
     <PackageReference Include="SkiaSharp" Version="1.68.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ImageResize.Contract\ImageResize.Contract.csproj" />
+    <ProjectReference Include="..\ImageResize.Logic\ImageResize.Logic.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="host.json">
