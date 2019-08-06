@@ -11,7 +11,7 @@ namespace ImageResize.Logic
 {
     public class ImageResizeService
     {
-        private static SemaphoreSlim _resizeSemaphore = new SemaphoreSlim(3);
+        private static SemaphoreSlim _resizeSemaphore = new SemaphoreSlim(8);
 
         public async Task<DisponseDelegate> CaptureAsync()
         {
