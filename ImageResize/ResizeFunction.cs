@@ -3,7 +3,6 @@ using ImageResize.Logic;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -12,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
@@ -62,10 +62,10 @@ namespace ImageResize
 
         private static async Task<HttpResponseMessage> ResizeSingle(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
         {
+            OutputImageParameters result;
+
             using (await _imageResizeService.CaptureAsync())
             {
-
-                OutputImageParameters result;
                 try
                 {
                     using (MemoryStream imageStreamCopy = new MemoryStream())
@@ -91,39 +91,37 @@ namespace ImageResize
 
                     throw;
                 }
-
-
-                HttpResponseMessage response = request.CreateResponse();
-
-                if (result.Resized)
-                {
-                    response.Headers.Add("X-Width", result.Width.ToString());
-                    response.Headers.Add("X-Height", result.Height.ToString());
-                    response.Headers.Add("X-Size", result.Size.ToString());
-
-                    response.Content = new StreamContent(result.OutputStream)
-                    {
-                        Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.OutputContentType) }
-                    };
-                    response.StatusCode = HttpStatusCode.OK;
-                }
-                else
-                {
-                    response.StatusCode = HttpStatusCode.NoContent;
-                }
-
-                return response;
             }
+
+            HttpResponseMessage response = request.CreateResponse();
+
+            if (result.Resized)
+            {
+                response.Headers.Add("X-Width", result.Width.ToString());
+                response.Headers.Add("X-Height", result.Height.ToString());
+                response.Headers.Add("X-Size", result.Size.ToString());
+
+                response.Content = new StreamContent(result.OutputStream)
+                {
+                    Headers = { ContentType = new MediaTypeHeaderValue(inputParameters.OutputContentType) }
+                };
+                response.StatusCode = HttpStatusCode.OK;
+            }
+            else
+            {
+                response.StatusCode = HttpStatusCode.NoContent;
+            }
+
+            return response;
         }
 
         private static async Task<HttpResponseMessage> ResizeMultiple(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
         {
+            List<ImageResizeResultModel> resizeResults = new List<ImageResizeResultModel>();
+            List<Task> uploadTasks = new List<Task>();
+
             using (await _imageResizeService.CaptureAsync())
             {
-
-                List<ImageResizeResultModel> resizeResults = new List<ImageResizeResultModel>();
-                List<Task> uploadTasks = new List<Task>();
-
                 try
                 {
                     using (MemoryStream imageStreamCopy = new MemoryStream())
@@ -139,7 +137,7 @@ namespace ImageResize
                         foreach (OutputImageParameters image in _imageResizeService.ResizeMultiple(inputParameters, imageSizes))
                         {
                             resizeResults.Add(new ImageResizeResultModel(image.Width, image.Height, image.Size, image.Quality));
-                            uploadTasks.Add(_imageUploadService.UploadImage(inputParameters.UploadUrl, image));
+                            uploadTasks.Add(_imageUploadService.UploadImage(inputParameters.UploadUrl, inputParameters.OutputContentType, image));
                         }
                     }
                 }
@@ -151,20 +149,24 @@ namespace ImageResize
 
                     throw;
                 }
-
-                try
-                {
-                    await Task.WhenAll(uploadTasks);
-                }
-                catch (HttpRequestException ex)
-                {
-                    request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex);
-                }
-
-                HttpResponseMessage response = request.CreateResponse(HttpStatusCode.OK, JsonConvert.SerializeObject(resizeResults));
-
-                return response;
             }
+
+            try
+            {
+                await Task.WhenAll(uploadTasks);
+            }
+            catch (HttpRequestException ex)
+            {
+                request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex);
+            }
+
+            HttpResponseMessage response = request.CreateResponse(
+                HttpStatusCode.OK,
+                resizeResults,
+                JsonMediaTypeFormatter.DefaultMediaType
+            );
+
+            return response;
         }
 
         private static IReadOnlyCollection<ImageSizeParam> ParseImageSizeParameters(HttpRequestMessage request)

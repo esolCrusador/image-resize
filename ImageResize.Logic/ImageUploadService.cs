@@ -16,7 +16,7 @@ namespace ImageResize.Logic
             _templateParametersService = templateParametersService;
         }
 
-        public async Task UploadImage(string templateUrl, OutputImageParameters outputImageParameters)
+        public async Task UploadImage(string templateUrl, string contentType, OutputImageParameters outputImageParameters)
         {
             string url = _templateParametersService.ReplaceParameters(
                 templateUrl,
@@ -24,7 +24,7 @@ namespace ImageResize.Logic
                 ImageUrlTemplateFactory.FormatParameter
             );
 
-            using (HttpResponseMessage response = await _httpClient.PutAsync(url, new StreamContent(outputImageParameters.OutputStream)))
+            using (HttpResponseMessage response = await _httpClient.PutAsync(url, new StreamContent(outputImageParameters.OutputStream) { Headers = { { "Content-Type", contentType } } }))
             {
                 if (!response.IsSuccessStatusCode)
                     throw new HttpRequestException($"Image upload PUT {url} failed with response: \r\n{await response.Content.ReadAsStringAsync()}");
