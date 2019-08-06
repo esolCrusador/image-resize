@@ -50,17 +50,26 @@ namespace ImageResize
                 throw;
             }
 
-            if (inputParameters.UploadUrl == null)
+            try
             {
-                return await ResizeSingle(request, inputParameters, imageSizes);
+                if (inputParameters.UploadUrl == null)
+                {
+                    return await ResizeSingle(request, inputParameters, imageSizes, log);
+                }
+                else
+                {
+                    return await ResizeMultiple(request, inputParameters, imageSizes, log);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                return await ResizeMultiple(request, inputParameters, imageSizes);
+                log.LogError(ex.Message, ex);
+
+                return request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex);
             }
         }
 
-        private static async Task<HttpResponseMessage> ResizeSingle(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
+        private static async Task<HttpResponseMessage> ResizeSingle(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes, ILogger log)
         {
             OutputImageParameters result;
 
@@ -115,7 +124,7 @@ namespace ImageResize
             return response;
         }
 
-        private static async Task<HttpResponseMessage> ResizeMultiple(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes)
+        private static async Task<HttpResponseMessage> ResizeMultiple(HttpRequestMessage request, InputImageParameters inputParameters, IReadOnlyCollection<ImageSizeParam> imageSizes, ILogger log)
         {
             List<ImageResizeResultModel> resizeResults = new List<ImageResizeResultModel>();
             List<Task> uploadTasks = new List<Task>();
@@ -157,6 +166,7 @@ namespace ImageResize
             }
             catch (HttpRequestException ex)
             {
+                log.LogError(ex, "Upload requests failed");
                 request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex);
             }
 
