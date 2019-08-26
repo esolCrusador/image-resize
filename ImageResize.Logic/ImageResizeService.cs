@@ -98,12 +98,12 @@ namespace ImageResize.Logic
                 if (widthDifference < heightDifference)
                 {
                     width = targetSize.Width.Value;
-                    height = originalHeight * width / originalWidth;
+                    height = (int)Math.Round((double)originalHeight * width / originalWidth);
                 }
                 else
                 {
                     height = targetSize.Height.Value;
-                    width = originalWidth * height / originalHeight;
+                    width = (int)Math.Round((double)originalWidth * height / originalHeight);
                 }
             }
             else
