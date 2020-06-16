@@ -1,8 +1,4 @@
 using ImageResize.Contract;
-using ImageResize.Logic;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -14,6 +10,10 @@ using System.Net.Http;
 using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using ImageResize.Logic;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Extensions.Logging;
 
 namespace ImageResize
 {
