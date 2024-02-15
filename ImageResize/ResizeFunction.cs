@@ -232,6 +232,8 @@ namespace ImageResize
                 return SKEncodedImageFormat.Jpeg;
             if (contentType == "image/png")
                 return SKEncodedImageFormat.Png;
+            if (contentType == "image/webp")
+                return SKEncodedImageFormat.Webp;
 
             throw new ArgumentOutOfRangeException(nameof(contentType));
         }

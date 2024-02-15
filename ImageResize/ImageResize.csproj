@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="3.0.7" />
-    <PackageReference Include="SkiaSharp" Version="1.68.3" />
+    <PackageReference Include="SkiaSharp" Version="2.88.7" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ImageResize.Contract\ImageResize.Contract.csproj" />
